@@ -317,6 +317,11 @@
           <WinNumber>1</WinNumber>
           <ItemText>val</ItemText>
         </Ww>
+        <Ww>
+          <count>20</count>
+          <WinNumber>1</WinNumber>
+          <ItemText>cont</ItemText>
+        </Ww>
       </WatchWindow1>
       <MemoryWindow1>
         <Mm>

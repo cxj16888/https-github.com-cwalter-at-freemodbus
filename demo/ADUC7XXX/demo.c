@@ -126,6 +126,8 @@ eMBRegDiscreteCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete )
 // Implement assert, otherwise SWI's are generated when assert fires, which is hard to debug.
 void __aeabi_assert(const char *expr, const char *file, int line)
 {
-	for (int i=0; i< 10; i++)
+	static int cont = TRUE;
+	
+	while (cont)
 		{}
 } 
