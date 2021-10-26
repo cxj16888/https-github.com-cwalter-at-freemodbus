@@ -20,7 +20,6 @@
  * File: $Id$
  */
 
-#include <aduc7026.h>
 #include "port.h"
 
 /* ----------------------- Modbus includes ----------------------------------*/
@@ -28,50 +27,63 @@
 #include "mbport.h"
 
 /* ----------------------- static functions ---------------------------------*/
-static void
-sio_irq( void )
-    __irq;
-     static void     prvvUARTTxReadyISR( void );
-     static void     prvvUARTRxISR( void );
+static void 		sio_irq( void );
+static void     prvvUARTTxReadyISR( void );
+static void     prvvUARTRxISR( void );
 
 /* ----------------------- Start implementation -----------------------------*/
-     void            vMBPortSerialEnable( BOOL xRxEnable, BOOL xTxEnable )
+void vMBPortSerialEnable( BOOL xRxEnable, BOOL xTxEnable )
 {
     if( xRxEnable )
     {
-        U1IER |= 0x01;
+        COMIEN0 |= 0x01; 	// Enable receive buffer full interrupt
     }
     else
     {
-        U1IER &= ~0x01;
+        COMIEN0 &= ~0x01;
     }
     if( xTxEnable )
     {
-        U1IER |= 0x02;
+        COMIEN0 |= 0x02;	// Enable transmit buffer empty interrupt
         prvvUARTTxReadyISR(  );
     }
     else
     {
-        U1IER &= ~0x02;
+        COMIEN0 &= ~0x02;
     }
 }
 
-void
-vMBPortClose( void )
+void vMBPortClose( void )
 {
 }
 
-BOOL
-xMBPortSerialInit( UCHAR ucPORT, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity eParity )
+
+/*
+
+
+					DL = HCLK										   
+						_______										   
+						Baudrate * 2 *16							   
+
+
+
+COMTX, COMRX, and COMDIV0 share the same address location. COMTX 
+and COMRX can be accessed when Bit 7 in the COMCON0 
+register is cleared. COMDIV0 can be accessed when Bit 7 
+of COMCON0 is set. 
+
+*/
+BOOL xMBPortSerialInit( UCHAR ucPORT, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity eParity )
 {
     BOOL            bInitialized = TRUE;
     USHORT          cfg = 0;
-    ULONG           reload = ( ( PCLK / ulBaudRate ) / 16UL );
+    ULONG           DL = ( ( HCLK / ulBaudRate ) / 32UL );
     volatile char   dummy;
 
     ( void )ucPORT;
-    /* Configure UART1 Pins */
-    PINSEL0 = 0x00050000;       /* Enable RxD1 and TxD1 */
+	
+    /* Configure UART Pins */
+		GP1CON = 0x011;							// Setup tx & rx pins on P1.0 and P1.1
 
     switch ( ucDataBits )
     {
@@ -110,20 +122,28 @@ xMBPortSerialInit( UCHAR ucPORT, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity e
 
     if( bInitialized )
     {
-        U1LCR = cfg;            /* Configure Data Bits and Parity */
-        U1IER = 0;              /* Disable UART1 Interrupts */
+        COMCON0 = cfg;            /* Configure Data Bits and Parity */
+        COMIEN0 = 0;              /* Disable UART1 Interrupts */
 
-        U1LCR |= 0x80;          /* Set DLAB */
-        U1DLL = reload;         /* Set Baud     */
-        U1DLM = reload >> 8;    /* Set Baud */
-        U1LCR &= ~0x80;         /* Clear DLAB */
+																	/* DLAB - Divisor latch access. Set by user to enable access 
+																		to the COMDIV0 and COMDIV1 registers. Cleared 
+																		by user to disable access to COMDIV0 and 
+																		COMDIV1 and enable access to COMRX and 
+																		COMTX. */
+        COMCON0 |= 0x80;          /* Set DLAB, divisor latch access bit */
+        COMDIV0 = DL;         		/* Set Baud */
+        COMDIV1 = 0;    		
+				COMCON0 &= ~0x80;         /* Clear DLAB */
 
         /* Configure UART1 Interrupt */
-        VICVectAddr0 = ( unsigned long )sio_irq;
-        VICVectCntl0 = 0x20 | 7;
-        VICIntEnable = 1 << 7;  /* Enable UART1 Interrupt */
-
-        dummy = U1IIR;          /* Required to Get Interrupts Started */
+				FIQ = sio_irq;						// use fast interrupt for serial comm.
+			
+				if ( InCriticalSection )
+					FIRQ_Temp |= UART_BIT;	// Enable UART IRQ when leaving critical section.
+				else
+					FIQEN 		|= UART_BIT;	// Enable UART IRQ
+			
+        dummy = COMIID0;          /* Required (on LPC214X) to Get Interrupts Started. Just leave it in for now. */
     }
 
     return bInitialized;
@@ -132,64 +152,57 @@ xMBPortSerialInit( UCHAR ucPORT, ULONG ulBaudRate, UCHAR ucDataBits, eMBParity e
 BOOL
 xMBPortSerialPutByte( CHAR ucByte )
 {
-    U1THR = ucByte;
-
     /* Wait till U0THR and U0TSR are both empty */
-    while( !( U1LSR & 0x20 ) )
-    {
-    }
+    while( !(0x020==(COMSTA0 & 0x020)) )
+    {}
 
+    COMTX = ((int)ucByte);
+		
     return TRUE;
 }
 
 BOOL
 xMBPortSerialGetByte( CHAR * pucByte )
 {
-    while( !( U1LSR & 0x01 ) )
-    {
-    }
+    while( !(0x01==(COMSTA0 & 0x01)) )
+    {}
 
     /* Receive Byte */
-    *pucByte = U1RBR;
+    *pucByte = COMRX;
 
     return TRUE;
 }
 
 
-void
-sio_irq( void )
-    __irq
+void sio_irq( void )
 {
     volatile char   dummy;
     volatile char   IIR;
-
-    while( ( ( IIR = U1IIR ) & 0x01 ) == 0 )
+	
+    while( ( ( IIR = COMIID0 ) & 0x01 ) == 0 )
     {
-        switch ( IIR & 0x0E )
+        switch ( IIR & 0x06 )
         {
         case 0x06:             /* Receive Line Status */
-            dummy = U1LSR;      /* Just clear the interrupt source */
+            dummy = COMSTA0;   /* Just clear the interrupt source */
             break;
 
-        case 0x04:             /* Receive Data Available */
-        case 0x0C:             /* Character Time-Out */
-            prvvUARTRxISR(  );
+        case 0x04:             /* Receive buffer Full */
+            prvvUARTRxISR();
             break;
 
-        case 0x02:             /* THRE Interrupt */
-            prvvUARTTxReadyISR(  );
+        case 0x02:             /* Transmit buffer empty */
+            prvvUARTTxReadyISR();
             break;
 
         case 0x00:             /* Modem Interrupt */
-            dummy = U1MSR;      /* Just clear the interrupt source */
+            dummy = COMSTA1;   /* Just clear the interrupt source */
             break;
 
         default:
             break;
         }
     }
-
-    VICVectAddr = 0xFF;         /* Acknowledge Interrupt */
 }
 
 
@@ -200,11 +213,12 @@ sio_irq( void )
  * a new character can be sent. The protocol stack will then call 
  * xMBPortSerialPutByte( ) to send the character.
  */
-static void
+static void 
 prvvUARTTxReadyISR( void )
 {
     pxMBFrameCBTransmitterEmpty(  );
 }
+
 
 /* 
  * Create an interrupt handler for the receive interrupt for your target

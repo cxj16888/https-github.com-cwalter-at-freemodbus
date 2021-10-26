@@ -25,20 +25,42 @@
 #include <assert.h>
 #include <inttypes.h>
 
+#include <aduc7026.h>
+
+#define 	UCLK 	41779200L		// 32768 * 1275 = 41.78MHz +/- 3%
+
+#define OSCI_HIGHSPEED     
+// 
+// Clock must be switched to 41.78MHz in main initialization code by:
+//
+//  	POWKEY1 = 0x01;       // Overwrite protection 
+//  	POWCON  = 0x00;       // Switch clockdivider to 41.78MHz
+//  	POWKEY2 = 0xF4;      	// Overwrite protection
+
+#ifdef OSCI_HIGHSPEED 			// 41.78MHz clock speed, POWCON = 0x00;
+	#define	HCLK	UCLK
+#else 											// default 5.22 MHz
+	#define	HCLK	(UCLK/8)
+#endif // OSCI_HIGHSPEED
+
+
 #define	INLINE
 #define PR_BEGIN_EXTERN_C           extern "C" {
 #define	PR_END_EXTERN_C             }
 
+
 #define ENTER_CRITICAL_SECTION( )		EnterCriticalSection( )
 #define EXIT_CRITICAL_SECTION( )    ExitCriticalSection( )
 
-#define CCLK	60000000L
-#define PCLK	CCLK/4
 
+
+extern int			IRQ_Temp;			// Temporary copy from IRQEN when in crictical section
+extern int			FIRQ_Temp;		// Temporary copy from FIQEN when in crictical section
 void            EnterCriticalSection( void );
 void            ExitCriticalSection( void );
 
 typedef uint8_t BOOL;
+extern BOOL			InCriticalSection;
 
 typedef unsigned char UCHAR;
 typedef char    CHAR;

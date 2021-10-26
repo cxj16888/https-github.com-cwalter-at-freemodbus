@@ -21,23 +21,42 @@
   */
 
 /* ----------------------- System includes --------------------------------*/
-#include <aduc7026.h>
+#include "port.h"
 
 /* ----------------------- Modbus includes ----------------------------------*/
 
 /* ----------------------- Variables ----------------------------------------*/
-int             VIC_Temp;
+int             IRQ_Temp;
+int             FIRQ_Temp;
+BOOL 						InCriticalSection = FALSE;
 
 /* ----------------------- Start implementation -----------------------------*/
-void
-EnterCriticalSection(  )
+
+
+/*
+		Note that to clear an already enabled interrupt source, the user 
+		must set the appropriate bit in the IRQCLR register. Clearing an 
+		interrupt’s IRQEN bit does not disable the interrupt.
+*/
+
+void EnterCriticalSection(  )
 {
-    VIC_Temp = VICIntEnable;    /* Save VICIntEnable */
-    VICIntEnClr = VIC_Temp;     /* Disable Interruptions */
+    IRQ_Temp  = IRQEN;   	/* Save IRQEN */
+		FIRQ_Temp = FIQEN;
+	
+    IRQCLR   = IRQ_Temp;  /* Disable Interrupts */
+		FIQCLR	 = FIRQ_Temp;
+	
+	  InCriticalSection = TRUE;
 }
 
-void
-ExitCriticalSection(  )
+
+
+void ExitCriticalSection(  )
 {
-    VICIntEnable = VIC_Temp;    /* Restore VICIntEnable */
+		IRQEN = IRQ_Temp;    	/* Restore IRQEN */
+		FIQEN = FIRQ_Temp;
+	
+		InCriticalSection = FALSE;
 }
+

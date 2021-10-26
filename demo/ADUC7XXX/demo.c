@@ -33,13 +33,26 @@ static USHORT   usRegInputStart = REG_INPUT_START;
 static USHORT   usRegInputBuf[REG_INPUT_NREGS];
 
 /* ----------------------- Start implementation -----------------------------*/
-int
-main( void )
-{
-    eMBErrorCode    eStatus;
+int main( void )
+ {
+	
+#ifdef OSCI_HIGHSPEED 		// Switch processor speed to 41.78MHz
+  	POWKEY1 = 0x01;       // Overwrite protection 
+  	POWCON  = 0x00;       // Switch clockdivider to 41.78MHz
+  	POWKEY2 = 0xF4;       // Overwrite protection
+#endif 
+	
+		eMBErrorCode    eStatus;
 
+// 	Used some digital I/O's for debugging, see porttimer.c.	 
+//	GP4DAT = 0x04000000;			// P4.2 configured as an output. LED is turned on	
+//	GP4DAT = 0x0c000000;			// P4.2 and P4.3 configured as an output. LED is turned on	
+	 
     eStatus = eMBInit( MB_RTU, 0x0A, 0, 38400, MB_PAR_EVEN );
-
+//    eStatus = eMBInit( MB_ASCII, 0x0A, 0, 38400, MB_PAR_EVEN );
+//    eStatus = eMBInit( MB_ASCII, 0x0A, 0, 9600, MB_PAR_EVEN );
+//    eStatus = eMBInit( MB_RTU, 0x0A, 0, 9600, MB_PAR_EVEN );
+	
     /* Enable the Modbus Protocol Stack. */
     eStatus = eMBEnable(  );
 
@@ -50,6 +63,7 @@ main( void )
         /* Here we simply count the number of poll cycles. */
         usRegInputBuf[0]++;
     }
+	
 }
 
 eMBErrorCode
@@ -107,3 +121,11 @@ eMBRegDiscreteCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete )
     ( void )usNDiscrete;
     return MB_ENOREG;
 }
+
+
+// Implement assert, otherwise SWI's are generated when assert fires, which is hard to debug.
+void __aeabi_assert(const char *expr, const char *file, int line)
+{
+	for (int i=0; i< 10; i++)
+		{}
+} 

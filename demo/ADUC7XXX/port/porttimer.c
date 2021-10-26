@@ -21,7 +21,6 @@
  */
 
 /* ----------------------- Platform includes --------------------------------*/
-#include <aduc7026.h>
 #include "port.h"
 
 /* ----------------------- Modbus includes ----------------------------------*/
@@ -29,30 +28,22 @@
 #include "mbport.h"
 
 /* ----------------------- static functions ---------------------------------*/
-static void
-prvvTIMERExpiredISR( void )
-    __irq;
+static void prvvTIMERExpiredISR( void );
+
+static uint32_t timer1_LD = 0;  // Load value for timer 1, T1LD register
 
 /* ----------------------- Start implementation -----------------------------*/
-BOOL
-xMBPortTimersInit( USHORT usTim1Timerout50us )
+BOOL xMBPortTimersInit( USHORT usTim1Timerout50us )
 {
-    // Timer0 Configuration
-    T0PR = 0;                   // Prscaler Register = 0
-    T0PC = 0;                   // Prscaler Counter = 0
+	
+		//T1LD = 131 * usTim1Timerout50us;    // Interval of (50us * usTim1Timerout50us) for prescale HCLK/16
+		timer1_LD = 131 * usTim1Timerout50us; // Interval of (50us * usTim1Timerout50us) for prescale HCLK/16
 
-    T0TC = 0;                   // Timer Counter = 0
+		T1CON 		= 0x44;											// Disabled,Periodic,Binary and HCLK/16
 
-    T0MR0 = ( PCLK / 20000 ) * usTim1Timerout50us;      // Interval of (50us * usTim1Timerout50us)
-    T0MCR = 3;                  // Bit 0 = 1 - Interruption on MR0
-    // Bit 1 = 1 - Reset on MR0
-
-    T0TCR = 0;                  // Timer Counter and Prescale Counter Disabled
-
-    // Configure Timer0 Interruption
-    VICVectAddr1 = ( unsigned int )prvvTIMERExpiredISR; // Timer0 Interruption - Priority 1
-    VICVectCntl1 = 0x20 | 4;
-    VICIntEnable = ( 1 << 4 );  // Enable Timer0 Interruption
+		IRQ 			= prvvTIMERExpiredISR;			// Use normal interrupt for timer1.
+ 
+//		GP4DAT 	 &= ~0x00040000;							// Reset P4.2
 
     return TRUE;
 }
@@ -61,22 +52,38 @@ xMBPortTimersInit( USHORT usTim1Timerout50us )
 void
 vMBPortTimersEnable(  )
 {
-    T0TCR = 0x02;               // Disable Timer and Reset Counter
-    T0TCR = 0x01;               // Enable Timer
+		T1LD 	 = timer1_LD;
+	  T1CON |= 0x80;            		// Enable Timer
+
+		if ( InCriticalSection )
+			IRQ_Temp |= GP_TIMER_BIT;				// Enable Timer1 IRQ when leaving critical section
+		else
+			IRQEN 	 |= GP_TIMER_BIT;				// Enable Timer1 IRQ
+	
+//		GP4DAT |= 0x00040000;				// Set P4.2
 }
 
 void
-vMBPortTimersDisable(  )
+vMBPortTimersDisable()
 {
-    T0TCR = 0x02;               // Disable Timer and Reset Counter
+
+	  T1CON &= ~0x80;            		// Disable Timer
+	
+		IRQ_Temp &= ~GP_TIMER_BIT;		// Disable Timer1 IRQ when leaving critical section
+		IRQEN 	 &= ~GP_TIMER_BIT;		// Disable Timer1 IRQ
+    IRQCLR   	= GP_TIMER_BIT;  		// Disable Timer1 IRQ 
+		T1CLRI 	  = 0;								// Clear Timer IRQ
+	
+//    GP4DAT &= ~0x00040000;				// Reset P4.2
 }
 
-static void
-prvvTIMERExpiredISR( void )
-    __irq
+static void prvvTIMERExpiredISR( void )
 {
-    ( void )pxMBPortCBTimerExpired(  );
+//		GP4DAT |= 0x00080000;				// Set P4.3
 
-    T0IR = 0xFF;
-    VICVectAddr = 0xFF;         // Acknowledge Interrupt
+		( void )pxMBPortCBTimerExpired(  );
+	
+//    GP4DAT &= ~0x00080000;				// Reset P4.3
+	
+		vMBPortTimersDisable();
 }
