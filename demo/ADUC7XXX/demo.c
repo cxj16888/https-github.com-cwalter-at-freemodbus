@@ -33,6 +33,38 @@ static USHORT   usRegInputStart = REG_INPUT_START;
 static USHORT   usRegInputBuf[REG_INPUT_NREGS];
 
 /* ----------------------- Start implementation -----------------------------*/
+
+/*
+
+https://www.embedded-solutions.at/files/freemodbus-v1.6-apidoc/group__modbus.html
+
+#include "mb.h" 
+
+This module defines the interface for the application. It contains the basic 
+functions and types required to use the Modbus protocol stack. A typical 
+application will want to call eMBInit() first. If the device is ready to answer 
+network requests it must then call eMBEnable() to activate the protocol stack. 
+In the main loop the function eMBPoll() must be called periodically. The time 
+interval between pooling depends on the configured Modbus timeout. If an RTOS 
+is available a separate task should be created and the task should always call 
+the function eMBPoll().
+
+
+ // Initialize protocol stack in RTU mode for a slave with address 10 = 0x0A
+ eMBInit( MB_RTU, 0x0A, 38400, MB_PAR_EVEN );
+
+ // Enable the Modbus Protocol Stack.
+ eMBEnable(  );
+
+ for( ;; )
+ {
+     // Call the main polling loop of the Modbus protocol stack.
+     eMBPoll(  );
+     ...
+ }
+
+*/
+
 int main( void )
  {
 	
@@ -41,7 +73,7 @@ int main( void )
   	POWCON  = 0x00;       // Switch clockdivider to 41.78MHz
   	POWKEY2 = 0xF4;       // Overwrite protection
 #endif 
-	
+ 
 		eMBErrorCode    eStatus;
 
 // 	Used some digital I/O's for debugging, see porttimer.c.	 
@@ -65,6 +97,29 @@ int main( void )
     }
 	
 }
+ 
+
+/*	The following call-back functions need to be implemented for an
+		actual application.
+
+		See: https://www.embedded-solutions.at/files/freemodbus-v1.6-apidoc/group__modbus__registers.html 
+
+		The protocol stack does not internally allocate any memory for the 
+		registers. This makes the protocol stack very small and also usable 
+		on low end targets. In addition the values don't have to be in the 
+		memory and could for example be stored in a flash.
+
+		Whenever the protocol stack requires a value it calls one of the 
+		callback function with the register address and the number of registers 
+		to read as an argument. The application should then read the actual 
+		register values (for example the ADC voltage) and should store the 
+		result in the supplied buffer.
+
+		If the protocol stack wants to update a register value because a 
+		write register function was received a buffer with the new register 
+		values is passed to the callback function. The function should then 
+		use these values to update the application register values.
+*/
 
 eMBErrorCode
 eMBRegInputCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNRegs )
@@ -123,11 +178,25 @@ eMBRegDiscreteCB( UCHAR * pucRegBuffer, USHORT usAddress, USHORT usNDiscrete )
 }
 
 
-// Implement assert, otherwise SWI's are generated when assert fires, which is hard to debug.
+#ifndef NDEBUG
+/* ALA 26/20/2021
+
+	 This function is meant for debugging purposes and only used when NDEBUG is not defined and
+	 is called when an assert() statement fails. These assert statements are meant to check
+	 for certain situations during development and should not be needed in production code and
+	 production code should be compiled with NDEBUG defined, for No Debug.
+
+	 The version in the default library does not work and generates SWI's, software interrupts,
+	 such that one cannot return with the debugger to the point where the assert failed.
+*/
 void __aeabi_assert(const char *expr, const char *file, int line)
 {
-	static int cont = TRUE;
-	
-	while (cont)
-		{}
+	static const char* _expr = 0;
+	static const char* _file = 0;
+	static int 				 _line = 0;
+
+	_expr = expr;
+	_file = file;
+  _line = line;
 } 
+#endif
